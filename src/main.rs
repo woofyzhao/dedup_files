@@ -26,7 +26,7 @@ fn digest(mut file: fs::File) -> (u64, String) {
 }
 
 fn walk_and_digest(dir: &str, threads: u8) -> Vec<FileInfo> {
-    let pool = ThreadPool::new(threads as usize);
+    let mut pool = ThreadPool::new(threads as usize);
     let result = Arc::new(Mutex::new(vec![]));
 
     for entry in WalkDir::new(dir) {
@@ -62,7 +62,10 @@ fn walk_and_digest(dir: &str, threads: u8) -> Vec<FileInfo> {
             });
         });
     }
+
+    // close channel and join all workers
     drop(pool);
+
     let v = result.lock().unwrap();
     v.to_vec()
 }
@@ -78,7 +81,7 @@ fn main() {
     let threads = args[2].parse::<u8>().unwrap();
 
     let info_list = walk_and_digest(dir, threads);
-    println!("{:?}", info_list);
+    println!("all collected: {:?}", info_list);
 
     let mut map = HashMap::new();
     for item in info_list {
@@ -91,14 +94,18 @@ fn main() {
         if v.len() < 2 {
             continue
         }
+
+        // double check size
+        assert!(v.iter().all(|x| x.size == v[0].size));
         saved += v[0].size * (v.len() as u64 - 1);
+
         v.sort_by(|a, b| a.path.cmp(&b.path));
         println!("{}:{}", v.len(), v.iter().map(|x| x.path.to_str().unwrap().to_string())
             .collect::<Vec<String>>().join(","));
 
         for item in &v[1..] {
             println!("deleting {:?}", item.path);
-            fs::remove_file(item.path.as_path()).unwrap();
+            //fs::remove_file(item.path.as_path()).unwrap();
         }
     }
 
