@@ -1,11 +1,16 @@
+mod thread_pool;
+
 use walkdir::WalkDir;
-use std::{fs, io};
+use std::{env, fs, io};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::exit;
+use std::sync::{Arc, Mutex};
 use sha2::{Sha256, Digest};
 use base64ct::{Base64, Encoding};
+use crate::thread_pool::ThreadPool;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct FileInfo {
     path: PathBuf,
     size: u64,
@@ -20,29 +25,60 @@ fn digest(mut file: fs::File) -> (u64, String) {
     (n, Base64::encode_string(&hash))
 }
 
-fn walk(dir: &str) -> Vec<FileInfo> {
-    let mut result = vec![];
+fn walk_and_digest(dir: &str, threads: u8) -> Vec<FileInfo> {
+    let pool = ThreadPool::new(threads as usize);
+    let result = Arc::new(Mutex::new(vec![]));
+
     for entry in WalkDir::new(dir) {
-        let file = entry.expect("traverse dir fail");
-        println!("found {:?}", file.file_name());
+        let file = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Error get dir entry fail, {}", e);
+                continue
+            },
+        };
+
+        println!("Found {:?}", file.path());
         if !file.file_type().is_file() {
             continue;
         }
-        let handle = fs::File::open(file.path()).expect("cannot open file");
-        let (size, digest) = digest(handle);
-        result.push(FileInfo {
-            path: file.path().to_path_buf(),
-            size,
-            digest,
+
+        let res = Arc::clone(&result);
+        pool.execute(move || {
+            let handle = match fs::File::open(file.path()) {
+                Ok(h) => h,
+                Err(e) => {
+                    eprintln!("Error: open {:?} fail, {}", file.path(), e);
+                    return
+                }
+            };
+
+            let (size, digest) = digest(handle);
+
+            res.lock().unwrap().push(FileInfo {
+                path: file.path().to_path_buf(),
+                size,
+                digest,
+            });
         });
     }
-    result
+    drop(pool);
+    let v = result.lock().unwrap();
+    v.to_vec()
 }
 
 fn main() {
-    let dir = "/Volumes/My Passport/腾讯电影协会/电子书/";
-    let info_list = walk(dir);
-    //println!("{:?}", info_list);
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 3 {
+        eprintln!("usage: {} <dir> <threads>", args[0]);
+        exit(-1)
+    }
+
+    let dir= &args[1];
+    let threads = args[2].parse::<u8>().unwrap();
+
+    let info_list = walk_and_digest(dir, threads);
+    println!("{:?}", info_list);
 
     let mut map = HashMap::new();
     for item in info_list {
@@ -62,7 +98,7 @@ fn main() {
 
         for item in &v[1..] {
             println!("deleting {:?}", item.path);
-            //fs::remove_file(item.path.as_path()).unwrap();
+            fs::remove_file(item.path.as_path()).unwrap();
         }
     }
 
