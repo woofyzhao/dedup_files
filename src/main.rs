@@ -26,7 +26,7 @@ fn digest(mut file: fs::File) -> (u64, String) {
 }
 
 fn walk_and_digest(dir: &str, threads: u8) -> Vec<FileInfo> {
-    let mut pool = ThreadPool::new(threads as usize);
+    let pool = ThreadPool::new(threads as usize);
     let result = Arc::new(Mutex::new(vec![]));
 
     for entry in WalkDir::new(dir) {
