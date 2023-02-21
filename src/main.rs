@@ -66,8 +66,19 @@ fn walk_and_digest(dir: &str, threads: u8) -> Vec<FileInfo> {
     // close channel and join all workers
     drop(pool);
 
-    let v = result.lock().unwrap();
-    v.to_vec()
+    // this does not work, result is dropped first before the temp MutexGuard variable
+    // result.lock().unwrap().clone()
+
+    // this works but cumbersome
+    // let v = result.lock().unwrap().clone();
+    // v
+
+    // this does not work either
+    // return result.lock().unwrap().clone()
+
+    // this works by merely adding a SEMICOLON... wow, rust is crazy
+    // see this: https://stackoverflow.com/questions/53586321/why-do-i-get-does-not-live-long-enough-in-a-return-value
+    return result.lock().unwrap().clone();
 }
 
 fn main() {
