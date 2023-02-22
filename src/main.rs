@@ -28,6 +28,7 @@ fn digest(mut file: fs::File) -> (u64, String) {
 fn walk_and_digest(dir: &str, threads: u8) -> Vec<FileInfo> {
     let pool = ThreadPool::new(threads as usize);
     let result = Arc::new(Mutex::new(vec![]));
+    let mut total = 0;
 
     for entry in WalkDir::new(dir) {
         let file = match entry {
@@ -38,10 +39,12 @@ fn walk_and_digest(dir: &str, threads: u8) -> Vec<FileInfo> {
             },
         };
 
-        println!("Found {:?}", file.path());
         if !file.file_type().is_file() {
             continue;
         }
+
+        total += 1;
+        println!("[{}] Found {:?}", total, file.path());
 
         let res = Arc::clone(&result);
         pool.execute(move || {
@@ -92,7 +95,7 @@ fn main() {
     let threads = args[2].parse::<u8>().unwrap();
 
     let info_list = walk_and_digest(dir, threads);
-    println!("all collected: {:?}", info_list);
+    println!("all collected: {}", info_list.len());
 
     let mut map = HashMap::new();
     for item in info_list {
@@ -116,7 +119,9 @@ fn main() {
 
         for item in &v[1..] {
             println!("deleting {:?}", item.path);
-            //fs::remove_file(item.path.as_path()).unwrap();
+            if let Err(e) = fs::remove_file(item.path.as_path()) {
+                eprintln!("Error: delete {:?} failed, {}", item.path, e);
+            }
         }
     }
 
